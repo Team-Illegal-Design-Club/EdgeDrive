@@ -62,14 +62,15 @@ protected:
 public:
 	virtual void Tick(float DeltaTime) override;
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
-
-
 	
+	void PlayHitEffect(const FVector& HitLocation);
+
 	void MoveInput(const FInputActionValue& Value);
 	void LookInput(const FInputActionValue& Value);
 
 	void StartSprint();
 	void EndSprint();
+	void Dodge();
 	UPROPERTY(EditAnywhere, Category = "Movement")
 	float WalkSpeed =500.f;
 	UPROPERTY(EditAnywhere, Category = "Movement")
@@ -80,7 +81,8 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void LineTrace();
 protected:
-	int Damage;
+	UPROPERTY(EditAnywhere)
+	float Damage;
 	void StartAttack();
 
 

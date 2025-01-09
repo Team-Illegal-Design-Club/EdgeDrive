@@ -9,7 +9,8 @@
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
-
+#include "Kismet/GameplayStatics.h"
+#include "EDHealthComponent.h"
 
 AEDCharacter::AEDCharacter()
 {
@@ -97,6 +98,7 @@ void AEDCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 		Input->BindAction(SprintAction, ETriggerEvent::Triggered, this, &AEDCharacter::StartSprint);
 		Input->BindAction(SprintAction, ETriggerEvent::Completed, this, &AEDCharacter::EndSprint);
 		Input->BindAction(AttackAction, ETriggerEvent::Triggered, this, &AEDCharacter::StartAttack);
+		Input->BindAction(DodgeAction, ETriggerEvent::Triggered, this, &AEDCharacter::Dodge);
 	//	Input->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AEDCharacter::Jump);
 
 	}
@@ -117,6 +119,9 @@ void AEDCharacter::EndSprint()
 	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
 
 }
+void AEDCharacter::Dodge()
+{
+}
 void AEDCharacter::StartAttack()
 {
 	//GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Red, "Pressed input action ");
@@ -129,24 +134,43 @@ void AEDCharacter::StartAttack()
 }
 void AEDCharacter::LineTrace()
 {
-	// Deal damage to enemys in range
 	FVector StartLocation = GloveMesh->GetSocketLocation(FName("Start"));
 	FVector EndLocation = GloveMesh->GetSocketLocation(FName("End"));
 
-	//Set Up Linetrace
 	FHitResult HitResult;
 	FCollisionQueryParams TraceParams;
 	TraceParams.AddIgnoredActor(this);
-	//Debug Lines
-	 DrawDebugLine(GetWorld(), StartLocation, EndLocation, FColor::Red, false , 1, 0,1);
-	//Linetrace
-	GetWorld()->LineTraceSingleByChannel(HitResult,StartLocation, EndLocation, ECC_Visibility, TraceParams);
-	if (HitResult.bBlockingHit)
+
+	// Debug Lines
+	DrawDebugLine(GetWorld(), StartLocation, EndLocation, FColor::Red, false, 1, 0, 1);
+
+	// Linetrace
+	if (GetWorld()->LineTraceSingleByChannel(HitResult, StartLocation, EndLocation, ECC_Visibility, TraceParams))
 	{
-		AActor* ActorHit = HitResult.GetActor();
-		ActorHit->Destroy();
+		if (AActor* ActorHit = HitResult.GetActor())
+		{
+			// ApplyDamage 사용
+			UGameplayStatics::ApplyDamage(
+				ActorHit,           // 데미지를 받을 액터
+				Damage,             // 데미지 양
+				GetController(),    // 데미지를 준 컨트롤러
+				this,              // 데미지를 준 액터
+				nullptr            // 데미지 타입
+			);
+
+			// 히트 이펙트 재생 (선택사항)
+			PlayHitEffect(HitResult.Location);
+		}
 	}
 }
+
+// 선택적: 히트 이펙트를 위한 함수
+void AEDCharacter::PlayHitEffect(const FVector& HitLocation)
+{
+	// 히트 이펙트 구현
+	// 파티클, 사운드 등을 재생
+}
+
 void AEDCharacter::MoveInput(const FInputActionValue& Value)
 {
 	/*GEngine->AddOnScreenDebugMessage(-1,1.f, FColor::Red, "Pressed input action ");*/
