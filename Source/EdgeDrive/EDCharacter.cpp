@@ -61,7 +61,10 @@ void AEDCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 	
-
+	if (bIsLockingOn && LockedTarget)
+	{
+		UpdateLockOnCamera(DeltaTime);
+	}
 	// Update character state
 	if (GetCharacterMovement()->IsFalling())
 	{
@@ -99,6 +102,7 @@ void AEDCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 		Input->BindAction(SprintAction, ETriggerEvent::Completed, this, &AEDCharacter::EndSprint);
 		Input->BindAction(AttackAction, ETriggerEvent::Triggered, this, &AEDCharacter::StartAttack);
 		Input->BindAction(DodgeAction, ETriggerEvent::Triggered, this, &AEDCharacter::Dodge);
+		Input->BindAction(LockOnAction, ETriggerEvent::Triggered, this, &AEDCharacter::ToggleLockOn);
 	//	Input->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AEDCharacter::Jump);
 
 	}
@@ -189,3 +193,79 @@ void AEDCharacter::MoveInput(const FInputActionValue& Value)
 	}
 }
 
+void AEDCharacter::ToggleLockOn(const FInputActionValue& Value)
+{
+	if (!bIsLockingOn)
+	{
+		LockedTarget = FindNearestTarget();
+		if (LockedTarget)
+		{
+			bIsLockingOn = true;
+			// 락온 시 카메라 컨트롤 설정
+			bUseControllerRotationYaw = true;
+			GetCharacterMovement()->bOrientRotationToMovement = false;
+		}
+	}
+	else
+	{
+		bIsLockingOn = false;
+		LockedTarget = nullptr;
+		// 락온 해제 시 원래 설정으로 복구
+		bUseControllerRotationYaw = false;
+		GetCharacterMovement()->bOrientRotationToMovement = true;
+	}
+}
+
+void AEDCharacter::UpdateLockOnCamera(float DeltaTime)
+{
+	GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Red, "Pressed input action ");
+	if (!LockedTarget) return;
+
+	// 타겟 방향으로 회전
+	FVector Direction = LockedTarget->GetActorLocation() - GetActorLocation();
+	FRotator TargetRotation = Direction.Rotation();
+	FRotator NewRotation = FMath::RInterpTo(
+		GetController()->GetControlRotation(),
+		TargetRotation,
+		DeltaTime,
+		LockOnRotationSpeed
+	);
+
+	GetController()->SetControlRotation(NewRotation);
+}
+
+AActor* AEDCharacter::FindNearestTarget()
+{
+	TArray<AActor*> OverlappingActors;
+	FVector Location = GetActorLocation();
+
+	// 주변 액터 검색
+	UKismetSystemLibrary::SphereOverlapActors(
+		GetWorld(),
+		Location,
+		LockOnRadius,
+		TArray<TEnumAsByte<EObjectTypeQuery>>(),
+		AActor::StaticClass(),
+		TArray<AActor*>(),
+		OverlappingActors
+	);
+
+	// 가장 가까운 타겟 찾기
+	AActor* NearestTarget = nullptr;
+	float NearestDistance = LockOnRadius;
+
+	for (AActor* Actor : OverlappingActors)
+	{
+		// 자신은 제외
+		if (Actor == this) continue;
+
+		float Distance = FVector::Distance(Location, Actor->GetActorLocation());
+		if (Distance < NearestDistance)
+		{
+			NearestDistance = Distance;
+			NearestTarget = Actor;
+		}
+	}
+
+	return NearestTarget;
+}

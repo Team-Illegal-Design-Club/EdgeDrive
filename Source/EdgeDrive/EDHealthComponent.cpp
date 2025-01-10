@@ -100,12 +100,12 @@ void UEDHealthComponent::TakeDamage(float DamageAmount, AActor* DamageCauser)
         CurrentShield = FMath::Clamp(CurrentShield - DamageAmount, 0.0f, MaxShield);
         GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Blue,
             FString::Printf(TEXT("Shield: %.1f"), CurrentShield));
-
+        CurrentNoHitTime = 0.0f;
         // 쉴드 변경 이벤트 발생
         OnShieldChanged.Broadcast(this, OldShield, CurrentShield, DamageCauser);
 
         // 쉴드 타이머 리셋
-        CurrentNoHitTime = 0.0f;
+ 
     }
     // 쉴드가 없는 경우에만 체력 감소
     else

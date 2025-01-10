@@ -38,6 +38,21 @@ class EDGEDRIVE_API AEDCharacter : public AModularCharacter
 protected:
 	UPROPERTY(BlueprintReadOnly, Category = "State")
 	ECharacterState CurrentState;
+
+
+	UPROPERTY(EditAnywhere, Category ="Lock On")
+	float LockOnRadius = 10000.f;
+	UPROPERTY(EditAnywhere, Category = "Lock On")
+	float LockOnRotationSpeed = 10.f;
+	UPROPERTY(EditAnywhere, Category = "Lock On")
+	class UInputAction* LockOnAction;
+
+	UPROPERTY()
+	AActor* LockedTarget;
+
+	UPROPERTY()
+	bool bIsLockingOn;
+
 	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
 	class UInputMappingContext* InputMapping;
 	UPROPERTY(EditAnywhere, Category = "EnhancedInput")
@@ -57,6 +72,11 @@ protected:
 	class UInputAction* AbilityAction;
 public:
 	AEDCharacter();
+
+	// Function
+	void ToggleLockOn(const FInputActionValue& Value);
+	void UpdateLockOnCamera(float DeltaTime);
+	AActor* FindNearestTarget();
 protected:
 	virtual void BeginPlay() override;
 public:
