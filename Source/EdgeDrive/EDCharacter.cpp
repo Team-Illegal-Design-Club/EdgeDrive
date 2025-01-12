@@ -9,7 +9,12 @@
 #include "Components/StaticMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h" 
+#include "NiagaraSystem.h"
+#include "Animation/AnimInstance.h"
 #include "Kismet/GameplayStatics.h"
+
 #include "EDHealthComponent.h"
 
 AEDCharacter::AEDCharacter()
@@ -41,11 +46,18 @@ AEDCharacter::AEDCharacter()
 		MovementComponent->MinAnalogWalkSpeed = 20.f;
 		MovementComponent->BrakingDecelerationWalking = 2000.f;
 	}
-
+	// Bind the montage end delegate
+	if (USkeletalMeshComponent* SkeletalMesh = GetMesh())
+	{
+		if (UAnimInstance* AnimInstance = SkeletalMesh->GetAnimInstance())
+		{
+			AnimInstance->OnMontageEnded.AddDynamic(this, &AEDCharacter::OnMontageEnded);
+		}
+	}
 	GloveMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Sword Mesh"));
 	GloveMesh->SetupAttachment(GetMesh(), FName("GloveSocket"));
 }
- 
+
 void AEDCharacter::BeginPlay()
 {
 	Super::BeginPlay();
@@ -55,12 +67,20 @@ void AEDCharacter::BeginPlay()
 	{
 		UE_LOG(LogTemp, Warning, TEXT("Input mapping or actions not set in EDCharacter"));
 	}
+	if (USkeletalMeshComponent* SkeletalMesh = GetMesh())
+	{
+		if (UAnimInstance* AnimInstance = SkeletalMesh->GetAnimInstance())
+		{
+			AnimInstance->OnMontageEnded.AddDynamic(this, &AEDCharacter::OnMontageEnded);
+		}
+	}
+
 }
 
 void AEDCharacter::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	
+
 	if (bIsLockingOn && LockedTarget)
 	{
 		UpdateLockOnCamera(DeltaTime);
@@ -103,7 +123,7 @@ void AEDCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
 		Input->BindAction(AttackAction, ETriggerEvent::Triggered, this, &AEDCharacter::StartAttack);
 		Input->BindAction(DodgeAction, ETriggerEvent::Triggered, this, &AEDCharacter::Dodge);
 		Input->BindAction(LockOnAction, ETriggerEvent::Triggered, this, &AEDCharacter::ToggleLockOn);
-	//	Input->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AEDCharacter::Jump);
+		//	Input->BindAction(JumpAction, ETriggerEvent::Triggered, this, &AEDCharacter::Jump);
 
 	}
 }
@@ -123,17 +143,26 @@ void AEDCharacter::EndSprint()
 	GetCharacterMovement()->MaxWalkSpeed = WalkSpeed;
 
 }
-void AEDCharacter::Dodge()
-{
-}
+
 void AEDCharacter::StartAttack()
 {
-	//GEngine->AddOnScreenDebugMessage(-1, 1.f, FColor::Red, "Pressed input action ");
-	// Call Attack animation
-	if (AttackAnim&& !bIsAttacking)
+	if (bIsAttacking && !bCanCombo) return;
+
+	if (CurrentComboIndex >= ComboAttackMontages.Num())
 	{
-		GetMesh()->PlayAnimation(AttackAnim, false);
+		CurrentComboIndex = 0;
+	}
+
+	if (UAnimMontage* CurrentAttackMontage = ComboAttackMontages[CurrentComboIndex])
+	{
 		bIsAttacking = true;
+		bCanCombo = false;
+		PlayAnimMontage(CurrentAttackMontage);
+
+		GetWorldTimerManager().ClearTimer(ComboResetTimer);
+		GetWorldTimerManager().SetTimer(ComboResetTimer, this, &AEDCharacter::ResetCombo, ComboTimeWindow, false);
+
+		CurrentComboIndex++;
 	}
 }
 void AEDCharacter::LineTrace()
@@ -178,7 +207,7 @@ void AEDCharacter::PlayHitEffect(const FVector& HitLocation)
 void AEDCharacter::MoveInput(const FInputActionValue& Value)
 {
 	/*GEngine->AddOnScreenDebugMessage(-1,1.f, FColor::Red, "Pressed input action ");*/
-	const FVector2D MovementVector = Value.Get<FVector2D>();
+	CurrentMovementInput = Value.Get<FVector2D>();
 
 	if (Controller != nullptr)
 	{
@@ -188,9 +217,10 @@ void AEDCharacter::MoveInput(const FInputActionValue& Value)
 		const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
 		const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
 
-		AddMovementInput(ForwardDirection, MovementVector.Y);
-		AddMovementInput(RightDirection, MovementVector.X);
+		AddMovementInput(ForwardDirection, CurrentMovementInput.Y);
+		AddMovementInput(RightDirection, CurrentMovementInput.X);
 	}
+	CurrentMovementInput = Value.Get<FVector2D>();
 }
 
 void AEDCharacter::ToggleLockOn(const FInputActionValue& Value)
@@ -233,7 +263,6 @@ void AEDCharacter::UpdateLockOnCamera(float DeltaTime)
 
 	GetController()->SetControlRotation(NewRotation);
 }
-
 AActor* AEDCharacter::FindNearestTarget()
 {
 	TArray<AActor*> OverlappingActors;
@@ -250,22 +279,224 @@ AActor* AEDCharacter::FindNearestTarget()
 		OverlappingActors
 	);
 
-	// 가장 가까운 타겟 찾기
-	AActor* NearestTarget = nullptr;
-	float NearestDistance = LockOnRadius;
+	// 카메라 시야각 고려
+	FVector CameraForward = Camera->GetForwardVector();
+	AActor* BestTarget = nullptr;
+	float BestScore = FLT_MAX;
 
 	for (AActor* Actor : OverlappingActors)
 	{
-		// 자신은 제외
+		// 자신 제외
 		if (Actor == this) continue;
 
+		// 인터페이스 구현 여부 확인
+		if (!Actor->Implements<ULockOnInterface>()) continue;
+
+		FVector DirectionToTarget = (Actor->GetActorLocation() - Location).GetSafeNormal();
+
+		// 시야각 계산
+		float ViewDotProduct = FVector::DotProduct(CameraForward, DirectionToTarget);
+
+		// 시야각이 너무 큰 경우 무시 (약 90도 이상)
+		if (ViewDotProduct < 0.0f) continue;
+
 		float Distance = FVector::Distance(Location, Actor->GetActorLocation());
-		if (Distance < NearestDistance)
+		float Score = Distance * (1.0f - ViewDotProduct);
+
+		if (Score < BestScore)
 		{
-			NearestDistance = Distance;
-			NearestTarget = Actor;
+			BestScore = Score;
+			BestTarget = Actor;
 		}
 	}
 
-	return NearestTarget;
+	return BestTarget;
+}
+void AEDCharacter::Dodge(const FInputActionValue& Value)
+{
+	if (!bCanDodge || GetCharacterMovement()->IsFalling() || CurrentState == ECharacterState::Dodging)
+		return;
+	CheckPerfectDodge();
+	float ForwardInput = CurrentMovementInput.Y;
+	float RightInput = CurrentMovementInput.X;
+
+	UAnimMontage* SelectedMontage = nullptr;
+	FVector DodgeDirection = FVector::ZeroVector;
+
+	if (UCharacterMovementComponent* MovementComp = GetCharacterMovement())
+	{
+		MovementComp->bOrientRotationToMovement = false;
+		MovementComp->bAllowPhysicsRotationDuringAnimRootMotion = false;
+	}
+
+	const FRotator Rotation = Controller->GetControlRotation();
+	const FRotator YawRotation(0, Rotation.Yaw, 0);
+	const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+	const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+	if (bIsLockingOn)
+	{
+
+		// 8방향 회피 방향 계산
+		DodgeDirection = ForwardDirection * ForwardInput + RightDirection * RightInput;
+
+		if (!DodgeDirection.IsNearlyZero())
+		{
+			DodgeDirection.Normalize();
+
+			// 방향에 따른 몽타주 선택
+			float DotForward = FVector::DotProduct(DodgeDirection, ForwardDirection);
+			float DotRight = FVector::DotProduct(DodgeDirection, RightDirection);
+
+			if (FMath::Abs(DotForward) > FMath::Abs(DotRight))
+			{
+				SelectedMontage = (DotForward > 0) ? ForwardDodgeMontage : BackwardDodgeMontage;
+			}
+			else
+			{
+				SelectedMontage = (DotRight > 0) ? RightDodgeMontage : LeftDodgeMontage;
+			}
+		}
+		else
+		{
+			DodgeDirection = -GetActorForwardVector();
+			SelectedMontage = BackwardDodgeMontage;
+		}
+	}
+	else
+	{
+		// 락온이 아닐 때는 앞/뒤로만 구르기
+		if (!CurrentMovementInput.IsZero())
+		{
+			DodgeDirection = GetActorForwardVector();
+			SelectedMontage = ForwardDodgeMontage;
+		}
+		else
+		{
+			DodgeDirection = -GetActorForwardVector();
+			SelectedMontage = BackwardDodgeMontage;
+		}
+	}
+	if (SelectedMontage)
+	{
+		float MontageLength = SelectedMontage->GetPlayLength();
+		float DodgeSpeed = DodgeDistance / MontageLength;
+
+		PlayAnimMontage(SelectedMontage);
+		LaunchCharacter(DodgeDirection * DodgeSpeed, true, false);
+		CurrentState = ECharacterState::Dodging;
+
+		bCanDodge = false;
+		GetWorldTimerManager().SetTimer(
+			DodgeCooldownTimer,
+			[this]() {
+			bCanDodge = true;
+			OnDodgeEnd();
+		},
+			DodgeCooldown,
+			false
+		);
+	}
+}
+
+
+void AEDCharacter::OnDodgeEnd()
+{
+	if (UCharacterMovementComponent* MovementComp = GetCharacterMovement())
+	{
+		// Restore rotation settings based on lock-on state
+		if (bIsLockingOn)
+		{
+			MovementComp->bOrientRotationToMovement = false;
+			bUseControllerRotationYaw = true;
+		}
+		else
+		{
+			MovementComp->bOrientRotationToMovement = true;
+			bUseControllerRotationYaw = false;
+		}
+		MovementComp->bAllowPhysicsRotationDuringAnimRootMotion = true;
+	}
+
+	CurrentState = ECharacterState::Idle;
+}
+void AEDCharacter::CheckPerfectDodge()
+{
+	// 주변 공격 체크
+	TArray<AActor*> NearbyActors;
+	UGameplayStatics::GetAllActorsWithTag(GetWorld(), FName("ActiveAttack"), NearbyActors);
+
+	if (NearbyActors.Num() > 0)
+	{
+		bIsPerfectDodge = true;
+		EnablePerfectDodgeEffects();
+
+		GetWorldTimerManager().SetTimer(
+			PerfectDodgeTimer,
+			this,
+			&AEDCharacter::DisablePerfectDodgeEffects,
+			PerfectDodgeTimeWindow,
+			false
+		);
+	}
+}
+
+void AEDCharacter::EnablePerfectDodgeEffects()
+{
+	// 슬로우 모션 효과
+	UGameplayStatics::SetGlobalTimeDilation(GetWorld(), SlowMotionScale);
+
+	// 잔상 효과 생성
+	if (AfterImageTemplate)
+	{
+		AfterImageEffect = UNiagaraFunctionLibrary::SpawnSystemAttached(
+			AfterImageTemplate,
+			GetMesh(),
+			NAME_None,
+			FVector::ZeroVector,
+			FRotator::ZeroRotator,
+			EAttachLocation::SnapToTarget,
+			true
+		);
+	}
+
+	// 카메라 FOV 효과
+	if (Camera)
+	{
+		Camera->FieldOfView = 110.0f;
+	}
+}
+
+void AEDCharacter::DisablePerfectDodgeEffects()
+{
+	UGameplayStatics::SetGlobalTimeDilation(GetWorld(), 1.0f);
+
+	if (AfterImageEffect)
+	{
+		AfterImageEffect->DeactivateImmediate();
+	}
+
+	if (Camera)
+	{
+		Camera->FieldOfView = 90.0f;
+	}
+
+	bIsPerfectDodge = false;
+}
+void AEDCharacter::ResetCombo()
+{
+	CurrentComboIndex = 0;
+	bIsAttacking = false;
+	bCanCombo = false;
+}
+
+void AEDCharacter::OnMontageEnded(UAnimMontage* Montage, bool bInterrupted)
+{
+	if (!bInterrupted && CurrentComboIndex > 0)
+	{
+		bCanCombo = true;
+	}
+	else
+	{
+		ResetCombo();
+	}
 }
