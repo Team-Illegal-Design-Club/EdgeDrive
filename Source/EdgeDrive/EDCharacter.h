@@ -37,10 +37,10 @@ public:
     UPROPERTY(EditAnywhere, Category = "Movement")
     float WalkSpeed = 500.f;
 
-    UPROPERTY(VisibleAnywhere)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
     class USpringArmComponent* SpringArm;
 
-    UPROPERTY(VisibleAnywhere)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
     class UCameraComponent* Camera;
 
     UPROPERTY(VisibleAnywhere)

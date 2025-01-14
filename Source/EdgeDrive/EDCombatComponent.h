@@ -77,4 +77,6 @@ public:
 
     UFUNCTION(BlueprintCallable)
     float GetCurrentComboRadius() const;
+private:
+    bool bHasHitThisAttack = false;
 };

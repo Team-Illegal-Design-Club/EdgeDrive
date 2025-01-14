@@ -40,7 +40,7 @@ void UEDCombatComponent::StartAttack()
     {
         return;
     }
-
+    bHasHitThisAttack = false;
     bIsAttacking = true;
     bCanCombo = false;
 
@@ -70,6 +70,9 @@ void UEDCombatComponent::StartAttack()
 
 void UEDCombatComponent::LineTrace()
 {
+    // 이미 히트했다면 리턴
+    if (bHasHitThisAttack) return;
+
     FVector StartLocation = GloveMesh->GetSocketLocation(FName("Start"));
     FVector EndLocation = GloveMesh->GetSocketLocation(FName("End"));
     float CurrentRadius = GetCurrentComboRadius();
@@ -77,36 +80,14 @@ void UEDCombatComponent::LineTrace()
     FCollisionQueryParams QueryParams;
     QueryParams.AddIgnoredActor(GetOwner());
     TArray<FHitResult> HitResults;
-    DrawDebugSphere(
+
+    DrawDebugCapsule(
         GetWorld(),
-        StartLocation,
+        (StartLocation + EndLocation) / 2.0f,
+        FVector::Distance(StartLocation, EndLocation) / 2.0f,
         CurrentRadius,
-        32,  // 세그먼트 수
+        FQuat::FindBetweenNormals(FVector::UpVector, (EndLocation - StartLocation).GetSafeNormal()),
         FColor::Red,
-        false,  // 지속적
-        0.2f,   // 지속 시간
-        0,      // 깊이 우선순위
-        1.0f    // 두께
-    );
-
-    DrawDebugSphere(
-        GetWorld(),
-        EndLocation,
-        CurrentRadius,
-        32,
-        FColor::Blue,
-        false,
-        0.2f,
-        0,
-        1.0f
-    );
-
-    // 두 구체 사이의 선 그리기
-    DrawDebugLine(
-        GetWorld(),
-        StartLocation,
-        EndLocation,
-        FColor::Green,
         false,
         0.2f,
         0,
@@ -117,9 +98,9 @@ void UEDCombatComponent::LineTrace()
         HitResults,
         StartLocation,
         EndLocation,
-        FQuat::Identity,
+        FQuat::FindBetweenNormals(FVector::UpVector, (EndLocation - StartLocation).GetSafeNormal()),
         ECC_Visibility,
-        FCollisionShape::MakeSphere(CurrentRadius),
+        FCollisionShape::MakeCapsule(CurrentRadius, FVector::Distance(StartLocation, EndLocation) / 2.0f),
         QueryParams
     );
 
@@ -127,11 +108,11 @@ void UEDCombatComponent::LineTrace()
     {
         if (AActor* ActorHit = Hit.GetActor())
         {
-             DrawDebugPoint(
+            DrawDebugPoint(
                 GetWorld(),
                 Hit.Location,
                 10.0f,
-                FColor::Yellow,
+                FColor::Green,
                 false,
                 0.2f,
                 0
@@ -139,9 +120,16 @@ void UEDCombatComponent::LineTrace()
             float CurrentDamage = GetCurrentComboDamage();
             UGameplayStatics::ApplyDamage(ActorHit, CurrentDamage, GetOwner()->GetInstigatorController(), GetOwner(), nullptr);
             PlayHitEffect(Hit.Location);
+
+            // 히트 발생 시 플래그 설정
+            bHasHitThisAttack = true;
+            break; // 첫 번째 히트 후 루프 종료
         }
     }
 }
+
+
+
 
 void UEDCombatComponent::PlayHitEffect(const FVector& HitLocation)
 {
