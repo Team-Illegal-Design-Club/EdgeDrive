@@ -14,12 +14,6 @@ class EDGEDRIVE_API AEDCharacter : public AModularCharacter
     GENERATED_BODY()
 
     UPROPERTY(VisibleAnywhere)
-    class UEDHeroComponent* HeroComponent;
-    UPROPERTY(VisibleAnywhere)
-    class UEDMovementComponent* MovementComponent;
-
-
-    UPROPERTY(VisibleAnywhere)
     class UEDCombatComponent* CombatComponent;
 
     UPROPERTY(VisibleAnywhere)
@@ -28,7 +22,11 @@ class EDGEDRIVE_API AEDCharacter : public AModularCharacter
     UPROPERTY(EditAnywhere, Category = "EnhancedInput")
     class UInputMappingContext* InputMapping;
 public:
+    UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
+    class UEDMovementComponent* MovementComponent;
 
+    UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
+    class UEDHeroComponent* HeroComponent;
     UFUNCTION(BlueprintCallable)
     UEDMovementComponent* GetEDMovementComponent();
 

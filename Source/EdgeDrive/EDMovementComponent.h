@@ -2,6 +2,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "InputActionValue.h"
+#include "Components/TimelineComponent.h"
 #include "EDMovementComponent.generated.h"
 
 UCLASS()
@@ -10,6 +11,7 @@ class EDGEDRIVE_API UEDMovementComponent : public UActorComponent
     GENERATED_BODY()
 
 protected:
+    virtual void BeginPlay() override;
     UPROPERTY(EditAnywhere, Category = "Movement")
     float WalkSpeed = 500.f;
 
@@ -30,6 +32,17 @@ protected:
 
     UPROPERTY(EditAnywhere, Category = "EnhancedInput")
     class UInputAction* DodgeAction;
+    UPROPERTY()
+    UTimelineComponent* DodgeTimeline;
+
+    UPROPERTY(EditAnywhere, Category = "Dodge")
+    UCurveFloat* DodgeCurve;
+    UFUNCTION()
+    void OnDodgeEnd();
+
+    void SetDodgeTimelineSpeed(float Speed);
+    
+    FOnTimelineFloat DodgeTimelineProgress;
 
     bool bIsSprint = false;
     bool bCanDodge = true;
@@ -40,16 +53,20 @@ public:
     UEDMovementComponent();
     UFUNCTION(BlueprintCallable, Category = "Movement")
     bool IsDodge() const { return bIsDodge; }
+    UPROPERTY(BlueprintReadWrite)
+    bool b2DModeEnabled = false;
     UPROPERTY()
     bool bIsDodge = false;
     void InitializeMovementComponent();
+    UFUNCTION()
+    void OnDodgeTimelineProgress(float Value);
 
     void SetupInput(class UEnhancedInputComponent* PlayerInputComponent);
     void MoveInput(const FInputActionValue& Value);
     void StartSprint();
     void EndSprint();
     void Dodge(const FInputActionValue& Value);
-    void OnDodgeEnd();
+ 
 
     UFUNCTION(BlueprintCallable)
     bool IsSprint() const;

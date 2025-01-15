@@ -22,6 +22,8 @@ protected:
     class UInputAction* LookAction;
 
 public:
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    bool _2DModeEnabled = false;
     UEDHeroComponent();
     UFUNCTION()
     void LookInput(const FInputActionValue& Value);

@@ -1,6 +1,7 @@
 #pragma once
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Components/TimelineComponent.h"
 #include "EDCombatComponent.generated.h"
 
 UCLASS()
@@ -9,7 +10,7 @@ class EDGEDRIVE_API UEDCombatComponent : public UActorComponent
     GENERATED_BODY()
 
 protected:
-
+    virtual void BeginPlay() override;
     UPROPERTY(EditAnywhere, Category = "Combat")
     TArray<UAnimMontage*> ComboAttackMontages;
 
@@ -48,6 +49,16 @@ protected:
 
     UPROPERTY(EditAnywhere, Category = "Effects")
     class UNiagaraSystem* AfterImageTemplate;
+    UPROPERTY()
+    UTimelineComponent* AttackTimeline;
+
+    UPROPERTY(EditAnywhere, Category = "Combat")
+    UCurveFloat* AttackCurve;
+
+
+    void SetAttackTimelineSpeed(float Speed);
+
+    FOnTimelineFloat AttackTimelineProgress;
 public:
     UPROPERTY()
     class UStaticMeshComponent* GloveMesh;
@@ -57,6 +68,7 @@ public:
 
     void SetupInput(class UEnhancedInputComponent* PlayerInputComponent);
     void StartAttack();
+
     UFUNCTION(BlueprintCallable)
     void LineTrace();
     void PlayHitEffect(const FVector& HitLocation);
@@ -69,7 +81,7 @@ public:
 
     UFUNCTION(BlueprintCallable)
     void DisableComboWindow();
-
+    UFUNCTION()
     void ResetCombo();
 
     UFUNCTION(BlueprintCallable)

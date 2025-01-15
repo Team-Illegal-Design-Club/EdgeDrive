@@ -6,11 +6,41 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "DrawDebugHelpers.h"
+
 UEDCombatComponent::UEDCombatComponent()
 {
     PrimaryComponentTick.bCanEverTick = true;
-}
 
+
+
+    // 커브 에셋 로드
+    AttackTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("AttackTimeline"));
+    AttackTimeline->SetIgnoreTimeDilation(true);
+    AttackTimeline->SetTickGroup(TG_PostUpdateWork); // 추가
+
+   
+}
+void UEDCombatComponent::BeginPlay()
+{
+    Super::BeginPlay();
+
+    if (AttackCurve)
+    {
+        FOnTimelineFloat ProgressFunction;
+        AttackTimeline->AddInterpFloat(AttackCurve, ProgressFunction);
+
+        // ResetCombo 바인딩
+        FOnTimelineEvent FinishedFunction;
+        FinishedFunction.BindUFunction(this, FName("ResetCombo"));
+        AttackTimeline->SetTimelineFinishedFunc(FinishedFunction);
+
+        AttackTimeline->SetTimelineLength(1.0f);
+        AttackTimeline->SetPlayRate(1/ComboResetTime);
+        AttackTimeline->SetLooping(false);
+
+    }
+
+}
 void UEDCombatComponent::SetupInput(UEnhancedInputComponent* PlayerInputComponent)
 {
     if (!PlayerInputComponent) return;
@@ -21,6 +51,13 @@ void UEDCombatComponent::SetupInput(UEnhancedInputComponent* PlayerInputComponen
     }
 }
 
+void UEDCombatComponent::SetAttackTimelineSpeed(float Speed)
+{
+    if (AttackTimeline)
+    {
+        AttackTimeline->SetPlayRate(Speed);
+    }
+}
 void UEDCombatComponent::StartAttack()
 {
     ACharacter* Character = Cast<ACharacter>(GetOwner());
@@ -40,22 +77,40 @@ void UEDCombatComponent::StartAttack()
     {
         return;
     }
+
+    // 공격 상태 초기화
     bHasHitThisAttack = false;
     bIsAttacking = true;
     bCanCombo = false;
 
+    // 애니메이션 재생
     Character->PlayAnimMontage(CurrentAttackMontage);
+
+    //// 콤보 리셋 타이머 설정
+    //if (ComboResetTime > 0.0f)
+    //{
+    //    GetWorld()->GetTimerManager().ClearTimer(ComboResetTimer);
+    //    GetWorld()->GetTimerManager().SetTimer(
+    //        ComboResetTimer,
+    //        this,
+    //        &UEDCombatComponent::ResetCombo,
+    //        ComboResetTime,
+    //        false
+    //    );
+    //}
+     // 대신 이 코드로 교체
+  
 
     if (ComboResetTime > 0.0f)
     {
-        GetWorld()->GetTimerManager().ClearTimer(ComboResetTimer);
-        GetWorld()->GetTimerManager().SetTimer(
-            ComboResetTimer,
-            this,
-            &UEDCombatComponent::ResetCombo,
-            ComboResetTime,
-            false
-        );
+        if (AttackTimeline)
+        {
+            AttackTimeline->Stop();  // 기존 타임라인 정지
+
+            AttackTimeline->PlayFromStart();
+
+    
+        }
     }
 
     if (GloveMesh &&
@@ -64,9 +119,9 @@ void UEDCombatComponent::StartAttack()
     {
         LineTrace();
     }
-
     CurrentComboIndex++;
 }
+
 
 void UEDCombatComponent::LineTrace()
 {
@@ -168,7 +223,11 @@ void UEDCombatComponent::ResetCombo()
     CurrentComboIndex = 0;
     bCanCombo = false;
     bIsAttacking = false;
-    GetWorld()->GetTimerManager().ClearTimer(ComboResetTimer);
+    // 디버그 메시지 출력
+    UKismetSystemLibrary::PrintString(GetWorld(),
+        FString::Printf(TEXT("Combo Reset Timer Triggered at: %.2f"), GetWorld()->GetTimeSeconds()),
+        true, true, FColor::Red, 2.0f);
+
 }
 
 float UEDCombatComponent::GetCurrentComboDamage() const

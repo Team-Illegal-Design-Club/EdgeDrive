@@ -3,9 +3,19 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
+
+
 UEDMovementComponent::UEDMovementComponent()
 {
     PrimaryComponentTick.bCanEverTick = true;
+
+    // Load Assets
+    DodgeTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("DodgeTimeline"));
+    DodgeTimelineProgress.BindUFunction(this, FName("OnDodgeTimelineProgress"));
+
+    //static ConstructorHelpers::FObjectFinder<UCurveFloat> CurveAssets(TEXT(""));
+
+
 }
 void UEDMovementComponent::InitializeMovementComponent()
 {
@@ -19,6 +29,39 @@ void UEDMovementComponent::InitializeMovementComponent()
             MovementComp->MinAnalogWalkSpeed = 20.f;
             MovementComp->BrakingDecelerationWalking = 2000.f;
         }
+    }
+}
+void UEDMovementComponent::OnDodgeTimelineProgress(float Value)
+{
+    if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
+    {
+        FVector CurrentVelocity = Character->GetVelocity();
+        Character->GetCharacterMovement()->Velocity =
+            FMath::Lerp(CurrentVelocity, FVector::ZeroVector, Value);
+    }
+}
+void UEDMovementComponent::BeginPlay()
+{
+    Super::BeginPlay();
+    if (DodgeCurve)
+    {
+        // ProgressFunction 대신 이미 바인딩된 DodgeTimelineProgress 사용
+        DodgeTimeline->AddInterpFloat(DodgeCurve, DodgeTimelineProgress);
+
+        FOnTimelineEvent FinishedFunction;
+        FinishedFunction.BindUFunction(this, FName("OnDodgeEnd"));
+        DodgeTimeline->SetTimelineFinishedFunc(FinishedFunction);
+
+        DodgeTimeline->SetTimelineLength(1.0f);
+        DodgeTimeline->SetPlayRate(1.5f);
+        DodgeTimeline->SetLooping(false);
+    }
+}
+void UEDMovementComponent::SetDodgeTimelineSpeed(float Speed)
+{
+    if (DodgeTimeline)
+    {
+        DodgeTimeline->SetPlayRate(Speed);
     }
 }
 void UEDMovementComponent::SetupInput(UEnhancedInputComponent* PlayerInputComponent)
@@ -54,9 +97,14 @@ void UEDMovementComponent::MoveInput(const FInputActionValue& Value)
 
         const FVector ForwardDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
         const FVector RightDirection = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
-
-        Character->AddMovementInput(ForwardDirection, MovementVector.Y);
         Character->AddMovementInput(RightDirection, MovementVector.X);
+
+        if (!b2DModeEnabled)
+        {
+
+            Character->AddMovementInput(ForwardDirection, MovementVector.Y);
+        }
+      
     }
 }
 
@@ -86,9 +134,9 @@ void UEDMovementComponent::EndSprint()
 
 void UEDMovementComponent::Dodge(const FInputActionValue& Value)
 {
+    if (bIsSprint || !bCanDodge) return;
     bIsDodge = true;
-    if (bIsSprint) return;
-    if (!bCanDodge) return;
+
 
     if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
     {
@@ -112,23 +160,30 @@ void UEDMovementComponent::Dodge(const FInputActionValue& Value)
         }
 
         Character->LaunchCharacter(DodgeDirection * DodgeDistance, true, true);
-
+        bIsDodge = true;
         bCanDodge = false;
-        GetWorld()->GetTimerManager().SetTimer(
-            DodgeCooldownTimer,
-            FTimerDelegate::CreateUObject(this, &UEDMovementComponent::OnDodgeEnd),
-            DodgeCooldown,
-            false
-        );
+        if (DodgeTimeline)
+        {
+            DodgeTimeline->Stop();  // 기존 타임라인 정지
+
+            DodgeTimeline->PlayFromStart();
+
+
+        }
+        //GetWorld()->GetTimerManager().SetTimer(
+        //    DodgeCooldownTimer,
+        //    FTimerDelegate::CreateUObject(this, &UEDMovementComponent::OnDodgeEnd),
+        //    DodgeCooldown,
+        //    false
+        //
+        //);
     }
 }
 
 void UEDMovementComponent::OnDodgeEnd()
 {
     bCanDodge = true;
-    bIsDodge = false;
-    GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Green,
-        FString::Printf(TEXT("asddssdas")));
+    bIsDodge = false;  // 애니메이션 완료 후 상태 리셋
     EndSprint();
 }
 

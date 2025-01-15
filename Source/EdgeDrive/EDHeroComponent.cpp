@@ -38,10 +38,15 @@ void UEDHeroComponent::SetupInput(UEnhancedInputComponent* PlayerInputComponent)
 
 void UEDHeroComponent::LookInput(const FInputActionValue& Value)
 {
-    if (APawn* Pawn = Cast<APawn>(GetOwner()))
+   if (APawn* Pawn = Cast<APawn>(GetOwner()))
     {
-        const FVector2D LookAxisVector = Value.Get<FVector2D>();
-        Pawn->AddControllerYawInput(LookAxisVector.X);
-        Pawn->AddControllerPitchInput(-LookAxisVector.Y);
+        if (!_2DModeEnabled)
+        {
+  
+            const FVector2D LookAxisVector = Value.Get<FVector2D>();
+            Pawn->AddControllerYawInput(LookAxisVector.X);
+            Pawn->AddControllerPitchInput(-LookAxisVector.Y);
+        }
+     
     }
 }
