@@ -27,7 +27,7 @@ private:
     AActor* LockedTarget;
 protected:
     UPROPERTY(EditAnywhere, Category = "Lock On")
-    float LockOnRadius = 10000.f;
+    float LockOnRadius = 100.f;
 
     UPROPERTY(EditAnywhere, Category = "Lock On")
     float LockOnRotationSpeed = 10.f;

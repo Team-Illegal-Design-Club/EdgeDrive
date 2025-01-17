@@ -79,14 +79,57 @@ void UEDAbilityComponent::UpdateLockOnCamera(float DeltaTime)
     Character->Controller->SetControlRotation(NewRotation);
 }
 
+//AActor* UEDAbilityComponent::FindNearestTarget()
+//{
+//    TArray<AActor*> OverlappingActors;
+//    FVector Location = GetOwner()->GetActorLocation();
+//
+//    UKismetSystemLibrary::SphereOverlapActors(
+//        GetWorld(),
+//        Location,
+//        LockOnRadius,
+//        TArray<TEnumAsByte<EObjectTypeQuery>>(),
+//        AActor::StaticClass(),
+//        TArray<AActor*>(),
+//        OverlappingActors
+//    );
+//
+//    AActor* BestTarget = nullptr;
+//    float BestScore = FLT_MAX;
+//
+//    for (AActor* Actor : OverlappingActors)
+//    {
+//        if (Actor == GetOwner()) continue;
+//        if (!Actor->Implements<ULockOnInterface>()) continue;
+//
+//        float Distance = FVector::Distance(Location, Actor->GetActorLocation());
+//        if (Distance < BestScore)
+//        {
+//            BestScore = Distance;
+//            BestTarget = Actor;
+//        }
+//    }
+//
+//    return BestTarget;
+//}
 AActor* UEDAbilityComponent::FindNearestTarget()
 {
     TArray<AActor*> OverlappingActors;
-    FVector Location = GetOwner()->GetActorLocation();
+    ACharacter* Character = Cast<ACharacter>(GetOwner());
+    if (!Character || !Character->Controller) return nullptr;
 
+    APlayerController* PC = Cast<APlayerController>(Character->Controller);
+    if (!PC) return nullptr;
+
+    // 화면 중앙 좌표 구하기
+    int32 ViewportSizeX, ViewportSizeY;
+    PC->GetViewportSize(ViewportSizeX, ViewportSizeY);
+    FVector2D ScreenCenter(ViewportSizeX * 0.5f, ViewportSizeY * 0.5f);
+
+    // 주변 액터 찾기
     UKismetSystemLibrary::SphereOverlapActors(
         GetWorld(),
-        Location,
+        Character->GetActorLocation(),
         LockOnRadius,
         TArray<TEnumAsByte<EObjectTypeQuery>>(),
         AActor::StaticClass(),
@@ -96,23 +139,54 @@ AActor* UEDAbilityComponent::FindNearestTarget()
 
     AActor* BestTarget = nullptr;
     float BestScore = FLT_MAX;
-
+    const float MaxAngle = 45.0f;
     for (AActor* Actor : OverlappingActors)
     {
         if (Actor == GetOwner()) continue;
         if (!Actor->Implements<ULockOnInterface>()) continue;
 
-        float Distance = FVector::Distance(Location, Actor->GetActorLocation());
-        if (Distance < BestScore)
+        FRotator CameraRotation;
+        FVector CameraLocation;
+        PC->GetPlayerViewPoint(CameraLocation, CameraRotation);
+
+        // 타겟까지의 방향 벡터
+        FVector DirectionToTarget = Actor->GetActorLocation() - CameraLocation;
+        DirectionToTarget.Normalize();
+
+        // 카메라 전방 벡터와의 각도 계산
+        float AngleToTarget = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(CameraRotation.Vector(), DirectionToTarget)));
+
+        // 설정된 각도 내에 있는지 확인
+        if (AngleToTarget <= MaxAngle)
         {
-            BestScore = Distance;
-            BestTarget = Actor;
+            FVector2D ScreenLocation;
+            if (PC->ProjectWorldLocationToScreen(Actor->GetActorLocation(), ScreenLocation))
+            {
+                float ScreenDistance = FVector2D::Distance(ScreenCenter, ScreenLocation);
+
+                if (ScreenDistance < BestScore)
+                {
+                    FHitResult HitResult;
+                    FCollisionQueryParams QueryParams;
+                    QueryParams.AddIgnoredActor(GetOwner());
+
+                    if (!GetWorld()->LineTraceSingleByChannel(
+                        HitResult,
+                        CameraLocation,
+                        Actor->GetActorLocation(),
+                        ECC_Visibility,
+                        QueryParams))
+                    {
+                        BestScore = ScreenDistance;
+                        BestTarget = Actor;
+                    }
+                }
+            }
         }
     }
 
     return BestTarget;
 }
-
 void UEDAbilityComponent::CheckPerfectDodge()
 {
     TArray<AActor*> NearbyActors;

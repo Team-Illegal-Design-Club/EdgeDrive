@@ -49,7 +49,7 @@ protected:
 
     UPROPERTY(EditAnywhere, Category = "Effects")
     class UNiagaraSystem* AfterImageTemplate;
-    UPROPERTY()
+
     UTimelineComponent* AttackTimeline;
 
     UPROPERTY(EditAnywhere, Category = "Combat")
@@ -91,4 +91,64 @@ public:
     float GetCurrentComboRadius() const;
 private:
     bool bHasHitThisAttack = false;
+};
+
+
+UENUM(BlueprintType)
+enum class EDamageType : uint8
+{
+    None UMETA(DisplayName = "None"),
+    Melee UMETA(DisplayName = "Melee"),
+    Projectile UMETA(DisplayName = "Projectile"),
+    Explosion UMETA(DisplayName = "Explosion"),
+    Environment UMETA(DisplayName = "Environment")
+};
+
+UENUM(BlueprintType)
+enum class EDamageResponse : uint8
+{
+    None UMETA(DisplayName = "None"),
+    HitReact UMETA(DisplayName = "HitReact"),
+    Stagger UMETA(DisplayName = "Stagger"),
+    Stun UMETA(DisplayName = "Stun"),
+    KnockBack UMETA(DisplayName = "KnockBack")
+};
+
+UCLASS(BlueprintType)
+class UEDDamageType : public UDamageType
+{
+    GENERATED_BODY()
+
+public:
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    float Amount;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    EDamageType DamageType;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    EDamageResponse DamageResponse;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    bool bShouldDamageInvincible;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    bool bCanBeBlocked;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    bool bCanBeParried;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    bool bShouldForceInterrupt;
+
+    UEDDamageType()
+    {
+        Amount = 0.0f;
+        DamageType = EDamageType::None;
+        DamageResponse = EDamageResponse::None;
+        bShouldDamageInvincible = false;
+        bCanBeBlocked = false;
+        bCanBeParried = false;
+        bShouldForceInterrupt = true;
+    }
 };
