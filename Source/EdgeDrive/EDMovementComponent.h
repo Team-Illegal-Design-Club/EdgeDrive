@@ -32,7 +32,7 @@ protected:
 
     UPROPERTY(EditAnywhere, Category = "EnhancedInput")
     class UInputAction* DodgeAction;
-    UPROPERTY()
+
     UTimelineComponent* DodgeTimeline;
 
     UPROPERTY(EditAnywhere, Category = "Dodge")

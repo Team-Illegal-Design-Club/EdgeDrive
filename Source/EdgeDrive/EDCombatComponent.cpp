@@ -177,7 +177,7 @@ void UEDCombatComponent::LineTrace()
             PlayHitEffect(Hit.Location);
 
             // 히트 발생 시 플래그 설정
-            bHasHitThisAttack = true;
+            //bHasHitThisAttack = true;
             break; // 첫 번째 히트 후 루프 종료
         }
     }
