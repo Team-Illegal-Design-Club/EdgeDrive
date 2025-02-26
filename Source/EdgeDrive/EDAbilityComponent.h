@@ -20,8 +20,6 @@ class EDGEDRIVE_API UEDAbilityComponent : public UActorComponent
 {
     GENERATED_BODY()
 private:
-    UPROPERTY()
-    bool bIsLockingOn;
 
     UPROPERTY()
     AActor* LockedTarget;
@@ -59,10 +57,14 @@ protected:
     FTimerHandle PerfectDodgeTimer;
 
 public:
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    bool bIsLockingOn;
+
     UEDAbilityComponent();
     // EDAbilityComponent.h 
-    UFUNCTION()
-    void ToggleLockOn(const FInputActionValue& Value);
+
+    UFUNCTION(BlueprintCallable)
+    void ToggleLockOn();
     void SetupInput(class UEnhancedInputComponent* PlayerInputComponent);
 
     void UpdateLockOnCamera(float DeltaTime);

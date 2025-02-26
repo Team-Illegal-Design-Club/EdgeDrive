@@ -1,31 +1,65 @@
 #pragma once
 #include "CoreMinimal.h"
+#include "EDMovementComponent.h"
 #include "Components/ActorComponent.h"
 #include "Components/TimelineComponent.h"
 #include "EDCombatComponent.generated.h"
 
+
+UENUM(BlueprintType)
+enum class EAttackLimb : uint8
+{
+    LeftHand UMETA(DisplayName = "Left Hand"),
+    RightHand UMETA(DisplayName = "Right Hand"),
+    LeftFoot UMETA(DisplayName = "Left Foot"),
+    RightFoot UMETA(DisplayName = "Right Foot")
+};
+
+USTRUCT(BlueprintType)
+struct FComboAttackData
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    UAnimMontage* Montage;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    EAttackLimb AttackLimb;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    float Damage;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    float Radius;
+};
 UCLASS()
 class EDGEDRIVE_API UEDCombatComponent : public UActorComponent
 {
     GENERATED_BODY()
 
+
 protected:
     virtual void BeginPlay() override;
-    UPROPERTY(EditAnywhere, Category = "Combat")
-    TArray<UAnimMontage*> ComboAttackMontages;
+    UPROPERTY(EditAnywhere, Category = "Combat|Hitstop")
+    float HitStopDuration = 0.1f;  // 히트스톱 지속 시간
 
-    UPROPERTY(EditAnywhere, Category = "Combat")
-    TArray<float> ComboDamages;
-
-    UPROPERTY(EditAnywhere, Category = "Combat")
-    TArray<float> ComboRadiuses;
-
+    UPROPERTY(EditAnywhere, Category = "Combat|Hitstop")
+    float HitStopTimeDilation = 0.1f;  // 히트스톱 시 시간 배율
     UPROPERTY(EditAnywhere, Category = "Combat")
     float ComboTimeWindow = 1.5f;
 
     UPROPERTY(EditAnywhere, Category = "Combat")
     float ComboResetTime = 2.0f;
 
+    UPROPERTY(BlueprintReadOnly, EditAnywhere, Category = "Combat")
+    TArray<FComboAttackData> ComboAttacks;
+
+
+    UPROPERTY(EditAnywhere, Category = "Combat|Sockets")
+    TMap<EAttackLimb, FName> StartSocketNames;
+
+    UPROPERTY(EditAnywhere, Category = "Combat|Sockets")
+    TMap<EAttackLimb, FName> EndSocketNames;
     UPROPERTY(EditAnywhere, Category = "EnhancedInput")
     class UInputAction* AttackAction;
 
@@ -42,7 +76,7 @@ protected:
     bool bCanCombo = false;
 
     UPROPERTY(BlueprintReadWrite)
-    bool bIsAttacking;
+    bool bIsAttacking= false;
 
     UPROPERTY(EditAnywhere)
     float Damage;
@@ -59,9 +93,7 @@ protected:
     void SetAttackTimelineSpeed(float Speed);
 
     FOnTimelineFloat AttackTimelineProgress;
-public:
-    UPROPERTY()
-    class UStaticMeshComponent* GloveMesh;
+
 
 public:
     UEDCombatComponent();
@@ -73,8 +105,7 @@ public:
     void LineTrace();
     void PlayHitEffect(const FVector& HitLocation);
 
-    UFUNCTION()
-    void OnMontageEnded(UAnimMontage* Montage, bool bInterrupted);
+ 
 
     UFUNCTION(BlueprintCallable)
     void EnableComboWindow();
@@ -83,14 +114,31 @@ public:
     void DisableComboWindow();
     UFUNCTION()
     void ResetCombo();
+    UPROPERTY()
+    TMap<EAttackLimb, UStaticMeshComponent*> LimbMeshes;
+
 
     UFUNCTION(BlueprintCallable)
     float GetCurrentComboDamage() const;
 
     UFUNCTION(BlueprintCallable)
     float GetCurrentComboRadius() const;
+ 
+
 private:
+    UPROPERTY()
+    UEDMovementComponent* MovementComponent;
     bool bHasHitThisAttack = false;
+    FVector CalculateAttackDirection(ACharacter* Character);
+    FTimerHandle HitStopTimerHandle;
+    float OriginalTimeDilation=1;
+
+    // 히트스톱 관련 함수들
+    UFUNCTION()
+    void ApplyHitStop();
+
+    UFUNCTION()
+    void ResetHitStop();
 };
 
 

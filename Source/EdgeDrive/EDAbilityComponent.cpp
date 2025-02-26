@@ -2,6 +2,7 @@
 #include "EnhancedInputComponent.h"
 #include "GameFramework/Character.h"
 #include "Kismet/GameplayStatics.h"
+#include "Components/CapsuleComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
@@ -11,6 +12,7 @@ UEDAbilityComponent::UEDAbilityComponent()
 {
     PrimaryComponentTick.bCanEverTick = true;
 }
+
 
 void UEDAbilityComponent::SetupInput(UEnhancedInputComponent* PlayerInputComponent)
 {
@@ -27,7 +29,7 @@ void UEDAbilityComponent::SetupInput(UEnhancedInputComponent* PlayerInputCompone
     }
 }
 
-void UEDAbilityComponent::ToggleLockOn(const FInputActionValue& Value)
+void UEDAbilityComponent::ToggleLockOn()
 {
     if (!bIsLockingOn)
     {
@@ -67,8 +69,23 @@ void UEDAbilityComponent::UpdateLockOnCamera(float DeltaTime)
     ACharacter* Character = Cast<ACharacter>(GetOwner());
     if (!Character || !Character->Controller) return;
 
-    FVector Direction = LockedTarget->GetActorLocation() - GetOwner()->GetActorLocation();
+    // 타겟의 위치를 가져옴
+    FVector TargetLocation = LockedTarget->GetActorLocation();
+
+    // 타겟의 캡슐 컴포넌트를 가져와서 높이 조절
+    if (UCapsuleComponent* TargetCapsule = Cast<UCapsuleComponent>(LockedTarget->GetRootComponent()))
+    {
+        // 타겟의 높이를 절반으로 조절
+        TargetLocation.Z -= TargetCapsule->GetScaledCapsuleHalfHeight();
+    }
+
+    FVector Direction = TargetLocation - GetOwner()->GetActorLocation();
     FRotator TargetRotation = Direction.Rotation();
+
+    // 피치(상하) 회전 각도 제한
+    float ClampedPitch = FMath::ClampAngle(TargetRotation.Pitch, -30.0f, 30.0f);
+    TargetRotation.Pitch = ClampedPitch;
+
     FRotator NewRotation = FMath::RInterpTo(
         Character->Controller->GetControlRotation(),
         TargetRotation,
@@ -78,6 +95,7 @@ void UEDAbilityComponent::UpdateLockOnCamera(float DeltaTime)
 
     Character->Controller->SetControlRotation(NewRotation);
 }
+
 
 //AActor* UEDAbilityComponent::FindNearestTarget()
 //{
@@ -126,7 +144,7 @@ AActor* UEDAbilityComponent::FindNearestTarget()
     PC->GetViewportSize(ViewportSizeX, ViewportSizeY);
     FVector2D ScreenCenter(ViewportSizeX * 0.5f, ViewportSizeY * 0.5f);
 
-    // 주변 액터 찾기
+    // 캐릭터 주변의 액터들 찾기
     UKismetSystemLibrary::SphereOverlapActors(
         GetWorld(),
         Character->GetActorLocation(),
@@ -139,47 +157,36 @@ AActor* UEDAbilityComponent::FindNearestTarget()
 
     AActor* BestTarget = nullptr;
     float BestScore = FLT_MAX;
-    const float MaxAngle = 45.0f;
+
     for (AActor* Actor : OverlappingActors)
     {
         if (Actor == GetOwner()) continue;
         if (!Actor->Implements<ULockOnInterface>()) continue;
 
-        FRotator CameraRotation;
-        FVector CameraLocation;
-        PC->GetPlayerViewPoint(CameraLocation, CameraRotation);
-
-        // 타겟까지의 방향 벡터
-        FVector DirectionToTarget = Actor->GetActorLocation() - CameraLocation;
-        DirectionToTarget.Normalize();
-
-        // 카메라 전방 벡터와의 각도 계산
-        float AngleToTarget = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(CameraRotation.Vector(), DirectionToTarget)));
-
-        // 설정된 각도 내에 있는지 확인
-        if (AngleToTarget <= MaxAngle)
+        // 화면상의 위치 계산
+        FVector2D ScreenLocation;
+        if (PC->ProjectWorldLocationToScreen(Actor->GetActorLocation(), ScreenLocation))
         {
-            FVector2D ScreenLocation;
-            if (PC->ProjectWorldLocationToScreen(Actor->GetActorLocation(), ScreenLocation))
+            // 화면 중앙과의 거리 계산
+            float ScreenDistance = FVector2D::Distance(ScreenCenter, ScreenLocation);
+
+            // 가장 가까운 타겟 선택
+            if (ScreenDistance < BestScore)
             {
-                float ScreenDistance = FVector2D::Distance(ScreenCenter, ScreenLocation);
+                // 시야 체크
+                FHitResult HitResult;
+                FCollisionQueryParams QueryParams;
+                QueryParams.AddIgnoredActor(GetOwner());
 
-                if (ScreenDistance < BestScore)
+                if (!GetWorld()->LineTraceSingleByChannel(
+                    HitResult,
+                    PC->PlayerCameraManager->GetCameraLocation(),
+                    Actor->GetActorLocation(),
+                    ECC_Visibility,
+                    QueryParams))
                 {
-                    FHitResult HitResult;
-                    FCollisionQueryParams QueryParams;
-                    QueryParams.AddIgnoredActor(GetOwner());
-
-                    if (!GetWorld()->LineTraceSingleByChannel(
-                        HitResult,
-                        CameraLocation,
-                        Actor->GetActorLocation(),
-                        ECC_Visibility,
-                        QueryParams))
-                    {
-                        BestScore = ScreenDistance;
-                        BestTarget = Actor;
-                    }
+                    BestScore = ScreenDistance;
+                    BestTarget = Actor;
                 }
             }
         }
@@ -187,6 +194,7 @@ AActor* UEDAbilityComponent::FindNearestTarget()
 
     return BestTarget;
 }
+
 void UEDAbilityComponent::CheckPerfectDodge()
 {
     TArray<AActor*> NearbyActors;

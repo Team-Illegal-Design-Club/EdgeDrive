@@ -1,6 +1,8 @@
 #include "EDCombatComponent.h"
 #include "GameFramework/Character.h"
 #include "EnhancedInputComponent.h"
+#include "EDCharacter.h"
+
 #include "NiagaraFunctionLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -10,13 +12,11 @@
 UEDCombatComponent::UEDCombatComponent()
 {
     PrimaryComponentTick.bCanEverTick = true;
+    // 메시 컴포넌트들을 CreateDefaultSubobject로 생성
 
-
-
-    // 커브 에셋 로드
     AttackTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("AttackTimeline"));
     AttackTimeline->SetIgnoreTimeDilation(true);
-    AttackTimeline->SetTickGroup(TG_PostUpdateWork); // 추가
+    AttackTimeline->SetTickGroup(TG_PostUpdateWork);
 
    
 }
@@ -24,22 +24,43 @@ void UEDCombatComponent::BeginPlay()
 {
     Super::BeginPlay();
 
+
+
+    // 소켓 이름 설정
+    StartSocketNames.Add(EAttackLimb::LeftHand, FName("Start"));
+    StartSocketNames.Add(EAttackLimb::RightHand, FName("Start"));
+    StartSocketNames.Add(EAttackLimb::LeftFoot, FName("Start"));
+    StartSocketNames.Add(EAttackLimb::RightFoot, FName("Start"));
+
+    EndSocketNames.Add(EAttackLimb::LeftHand, FName("End"));
+    EndSocketNames.Add(EAttackLimb::RightHand, FName("End"));
+    EndSocketNames.Add(EAttackLimb::LeftFoot, FName("End"));
+    EndSocketNames.Add(EAttackLimb::RightFoot, FName("End"));
+    for (const auto& Pair : LimbMeshes)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Initialized Limb: %s, Mesh: %s"),
+            *UEnum::GetValueAsString(Pair.Key),
+            Pair.Value ? *Pair.Value->GetName() : TEXT("None"));
+    }
+
+    // 타임라인 설정
     if (AttackCurve)
     {
         FOnTimelineFloat ProgressFunction;
         AttackTimeline->AddInterpFloat(AttackCurve, ProgressFunction);
 
-        // ResetCombo 바인딩
         FOnTimelineEvent FinishedFunction;
         FinishedFunction.BindUFunction(this, FName("ResetCombo"));
         AttackTimeline->SetTimelineFinishedFunc(FinishedFunction);
 
         AttackTimeline->SetTimelineLength(1.0f);
-        AttackTimeline->SetPlayRate(1/ComboResetTime);
+        AttackTimeline->SetPlayRate(1 / ComboResetTime);
         AttackTimeline->SetLooping(false);
-
     }
-
+    if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
+    {
+        MovementComponent = Character->FindComponentByClass<UEDMovementComponent>();
+    }
 }
 void UEDCombatComponent::SetupInput(UEnhancedInputComponent* PlayerInputComponent)
 {
@@ -60,65 +81,53 @@ void UEDCombatComponent::SetAttackTimelineSpeed(float Speed)
 }
 void UEDCombatComponent::StartAttack()
 {
-    ACharacter* Character = Cast<ACharacter>(GetOwner());
-    if (!Character || !Character->GetMesh() || !Character->GetMesh()->GetAnimInstance()) return;
-    if (bIsAttacking && !bCanCombo) return;
-    if (ComboAttackMontages.Num() == 0) return;
-
-    if (CurrentComboIndex >= ComboAttackMontages.Num())
-    {
-        CurrentComboIndex = 0;
-    }
-
-    UAnimMontage* CurrentAttackMontage = ComboAttackMontages[CurrentComboIndex];
-    if (!CurrentAttackMontage) return;
-
-    if (Character->GetMesh()->GetAnimInstance()->Montage_IsPlaying(CurrentAttackMontage))
-    {
+    if (MovementComponent->IsDodge())
         return;
+    if (bIsAttacking && !bCanCombo) return;
+
+    ACharacter* Character = Cast<ACharacter>(GetOwner());
+    
+    if (!Character || !Character->GetMesh() || !Character->GetMesh()->GetAnimInstance()) return;
+
+    if (ComboAttacks.Num() == 0) return;
+    if (bCanCombo || !bIsAttacking)
+    {
+        FVector AttackDirection = CalculateAttackDirection(Character);
+        FRotator TargetRotation = AttackDirection.Rotation();
+        FRotator NewRotation = FMath::RInterpTo(
+            Character->GetActorRotation(),
+            FRotator(0.0f, TargetRotation.Yaw, 0.0f),
+            GetWorld()->GetDeltaSeconds(),
+            10.0f
+        );
+        Character->SetActorRotation(NewRotation);
+    }
+    if (CurrentComboIndex >= ComboAttacks.Num())
+    {
+        ResetCombo();
     }
 
-    // 공격 상태 초기화
+    FComboAttackData& CurrentAttackData = ComboAttacks[CurrentComboIndex];
+    //if (!CurrentAttackData.Montage) return;
+    //if (Character->GetMesh()->GetAnimInstance()->Montage_IsPlaying(CurrentAttackData.Montage))
+    //{
+    //    return;
+    //}
+
     bHasHitThisAttack = false;
     bIsAttacking = true;
     bCanCombo = false;
 
-    // 애니메이션 재생
-    Character->PlayAnimMontage(CurrentAttackMontage);
+    Character->PlayAnimMontage(CurrentAttackData.Montage);
 
-    //// 콤보 리셋 타이머 설정
-    //if (ComboResetTime > 0.0f)
-    //{
-    //    GetWorld()->GetTimerManager().ClearTimer(ComboResetTimer);
-    //    GetWorld()->GetTimerManager().SetTimer(
-    //        ComboResetTimer,
-    //        this,
-    //        &UEDCombatComponent::ResetCombo,
-    //        ComboResetTime,
-    //        false
-    //    );
-    //}
-     // 대신 이 코드로 교체
-  
-
-    if (ComboResetTime > 0.0f)
+    if (ComboResetTime > 0.0f && AttackTimeline)
     {
-        if (AttackTimeline)
-        {
-            AttackTimeline->Stop();  // 기존 타임라인 정지
-
-            AttackTimeline->PlayFromStart();
-
-    
-        }
+        AttackTimeline->Stop();
+        AttackTimeline->PlayFromStart();
     }
 
-    if (GloveMesh &&
-        GloveMesh->DoesSocketExist(FName("Start")) &&
-        GloveMesh->DoesSocketExist(FName("End")))
-    {
-        LineTrace();
-    }
+    //// 현재 공격에 사용되는 부위의 메시로 라인트레이스 실행
+
     CurrentComboIndex++;
 }
 
@@ -126,12 +135,38 @@ void UEDCombatComponent::StartAttack()
 void UEDCombatComponent::LineTrace()
 {
     // 이미 히트했다면 리턴
-    if (bHasHitThisAttack) return;
+   // if (bHasHitThisAttack) return;
+    if (!ComboAttacks.IsValidIndex(CurrentComboIndex - 1))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Invalid combo index"));
+        return;
+    }
 
-    FVector StartLocation = GloveMesh->GetSocketLocation(FName("Start"));
-    FVector EndLocation = GloveMesh->GetSocketLocation(FName("End"));
+    const FComboAttackData& CurrentAttackData = ComboAttacks[CurrentComboIndex - 1];
+    UStaticMeshComponent* CurrentLimbMesh = LimbMeshes[CurrentAttackData.AttackLimb];
+    if (!CurrentLimbMesh)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Missing limb mesh for: %s"),
+            *UEnum::GetValueAsString(CurrentAttackData.AttackLimb));
+        return;
+    }
+
+    // 소켓 이름 가져오기
+    FName StartSocket = StartSocketNames[CurrentAttackData.AttackLimb];
+    FName EndSocket = EndSocketNames[CurrentAttackData.AttackLimb];
+
+    // 소켓 존재 여부 확인
+    if (!CurrentLimbMesh->DoesSocketExist(StartSocket) ||
+        !CurrentLimbMesh->DoesSocketExist(EndSocket))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("Socket does not exist on mesh"));
+        return;
+    }
+
+    FVector StartLocation = CurrentLimbMesh->GetSocketLocation(StartSocket);
+    FVector EndLocation = CurrentLimbMesh->GetSocketLocation(EndSocket);
+
     float CurrentRadius = GetCurrentComboRadius();
-
     FCollisionQueryParams QueryParams;
     QueryParams.AddIgnoredActor(GetOwner());
     TArray<FHitResult> HitResults;
@@ -174,11 +209,14 @@ void UEDCombatComponent::LineTrace()
             );
             float CurrentDamage = GetCurrentComboDamage();
             UGameplayStatics::ApplyDamage(ActorHit, CurrentDamage, GetOwner()->GetInstigatorController(), GetOwner(), nullptr);
-            PlayHitEffect(Hit.Location);
-
+            if (Cast<APawn>(ActorHit)) {
+                if (CurrentComboIndex == ComboAttacks.Num())
+                    PlayHitEffect(Hit.Location);
+               // ApplyHitStop();
+            }
             // 히트 발생 시 플래그 설정
-            //bHasHitThisAttack = true;
-            break; // 첫 번째 히트 후 루프 종료
+            bHasHitThisAttack = true;
+
         }
     }
 }
@@ -199,14 +237,6 @@ void UEDCombatComponent::PlayHitEffect(const FVector& HitLocation)
     }
 }
 
-void UEDCombatComponent::OnMontageEnded(UAnimMontage* Montage, bool bInterrupted)
-{
-    if (bIsAttacking)
-    {
-        bIsAttacking = false;
-        bCanCombo = false;
-    }
-}
 
 void UEDCombatComponent::EnableComboWindow()
 {
@@ -223,27 +253,68 @@ void UEDCombatComponent::ResetCombo()
     CurrentComboIndex = 0;
     bCanCombo = false;
     bIsAttacking = false;
+    bHasHitThisAttack = false;
     // 디버그 메시지 출력
-    UKismetSystemLibrary::PrintString(GetWorld(),
+   /* UKismetSystemLibrary::PrintString(GetWorld(),
         FString::Printf(TEXT("Combo Reset Timer Triggered at: %.2f"), GetWorld()->GetTimeSeconds()),
-        true, true, FColor::Red, 2.0f);
+        true, true, FColor::Red, 2.0f);*/
 
 }
 
 float UEDCombatComponent::GetCurrentComboDamage() const
 {
-    if (CurrentComboIndex > 0 && CurrentComboIndex <= ComboDamages.Num())
+    if (CurrentComboIndex > 0 && CurrentComboIndex <= ComboAttacks.Num())
     {
-        return ComboDamages[CurrentComboIndex - 1];
+        return ComboAttacks[CurrentComboIndex - 1].Damage;
     }
     return Damage;
 }
 
 float UEDCombatComponent::GetCurrentComboRadius() const
 {
-    if (CurrentComboIndex > 0 && CurrentComboIndex <= ComboRadiuses.Num())
+    if (CurrentComboIndex > 0 && CurrentComboIndex <= ComboAttacks.Num())
     {
-        return ComboRadiuses[CurrentComboIndex - 1];
+        return ComboAttacks[CurrentComboIndex - 1].Radius;
     }
     return 20.0f;
 }
+
+FVector UEDCombatComponent::CalculateAttackDirection(ACharacter* Character)
+{
+    const FRotator Rotation = Character->Controller->GetControlRotation();
+    const FRotator YawRotation(0, Rotation.Yaw, 0);
+    const FVector ForwardDir = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
+    const FVector RightDir = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
+
+    if (MovementComponent && !MovementComponent->CurrentMovementInput.IsZero())
+    {
+        FVector2D Input = MovementComponent->CurrentMovementInput;
+        return (ForwardDir * Input.Y + RightDir * Input.X).GetSafeNormal();
+    }
+
+    // 입력이 없을 경우 캐릭터가 바라보는 방향 사용
+    return Character->GetActorForwardVector();
+}
+
+void UEDCombatComponent::ApplyHitStop()
+{
+    OriginalTimeDilation = UGameplayStatics::GetGlobalTimeDilation(GetWorld());
+
+    // 월드의 시간 배율 조정
+    UGameplayStatics::SetGlobalTimeDilation(GetWorld(), HitStopTimeDilation);
+
+    // 타이머로 히트스톱 해제 예약
+    GetWorld()->GetTimerManager().SetTimer(
+        HitStopTimerHandle,
+        this,
+        &UEDCombatComponent::ResetHitStop,
+        HitStopDuration * HitStopTimeDilation,  // 실제 시간으로 조정
+        false
+    );
+}
+
+void UEDCombatComponent::ResetHitStop()
+{
+    UGameplayStatics::SetGlobalTimeDilation(GetWorld(), OriginalTimeDilation);
+}
+

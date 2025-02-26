@@ -9,8 +9,7 @@ public class EdgeDrive : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "GameplayAbilities",
-    "GameplayTags",
-    "GameplayTasks" });
+    "GameplayTags", "GameplayTasks", "GameFeatures" });
 
         PrivateDependencyModuleNames.AddRange(new string[] { "Niagara" });
 

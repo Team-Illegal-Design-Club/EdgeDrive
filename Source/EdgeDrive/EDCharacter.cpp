@@ -31,10 +31,21 @@ AEDCharacter::AEDCharacter()
     Camera = CreateDefaultSubobject<UCameraComponent>("Camera");
     Camera->SetupAttachment(SpringArm);
     Camera->bUsePawnControlRotation = false;
+    CombatComponent->LimbMeshes.Empty();
+    LeftHandMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LeftHandMesh"));
+    LeftHandMesh->SetupAttachment(GetMesh(), FName("hand_l"));
 
-    GloveMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Sword Mesh"));
-    GloveMesh->SetupAttachment(GetMesh(), FName("GloveSocket"));
-    CombatComponent->GloveMesh = GloveMesh;
+    RightHandMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RightHandMesh"));
+    RightHandMesh->SetupAttachment(GetMesh(), FName("hand_r"));
+
+    LeftFootMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LeftFootMesh"));
+    LeftFootMesh->SetupAttachment(GetMesh(), FName("calf_l"));
+
+    RightFootMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RightFootMesh"));
+    RightFootMesh->SetupAttachment(GetMesh(), FName("calf_r"));
+
+    // CombatComponent에 메시 컴포넌트 연결
+
 
 }
 UEDMovementComponent* AEDCharacter::GetEDMovementComponent()
@@ -60,15 +71,16 @@ void AEDCharacter::BeginPlay()
             MovementComponent->InitializeMovementComponent();
         }
     }
-    Super::BeginPlay();
-
-    if (USkeletalMeshComponent* SkeletalMesh = GetMesh())
+    if (CombatComponent)
     {
-        if (UAnimInstance* AnimInstance = SkeletalMesh->GetAnimInstance())
-        {
-            AnimInstance->OnMontageEnded.AddDynamic(CombatComponent, &UEDCombatComponent::OnMontageEnded);
-        }
+        CombatComponent->LimbMeshes.Add(EAttackLimb::LeftHand, LeftHandMesh);
+        CombatComponent->LimbMeshes.Add(EAttackLimb::RightHand, RightHandMesh);
+        CombatComponent->LimbMeshes.Add(EAttackLimb::LeftFoot, LeftFootMesh);
+        CombatComponent->LimbMeshes.Add(EAttackLimb::RightFoot, RightFootMesh);
     }
+
+
+
 }
 
 void AEDCharacter::Tick(float DeltaTime)

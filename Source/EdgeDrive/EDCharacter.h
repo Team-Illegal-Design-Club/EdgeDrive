@@ -13,17 +13,19 @@ class EDGEDRIVE_API AEDCharacter : public AModularCharacter
 {
     GENERATED_BODY()
 
-    UPROPERTY(VisibleAnywhere)
-    class UEDCombatComponent* CombatComponent;
 
-    UPROPERTY(VisibleAnywhere)
-    class UEDAbilityComponent* AbilityComponent;
 
+
+ 
+public:
     UPROPERTY(EditAnywhere, Category = "EnhancedInput")
     class UInputMappingContext* InputMapping;
-public:
+    UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
+    class UEDCombatComponent* CombatComponent;
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
     class UEDMovementComponent* MovementComponent;
+    UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
+    class UEDAbilityComponent* AbilityComponent;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite)
     class UEDHeroComponent* HeroComponent;
@@ -32,17 +34,25 @@ public:
 
     UFUNCTION(BlueprintCallable)
     UEDCombatComponent* GetEDCombatComponent();
-    UPROPERTY(EditAnywhere, Category = "Movement")
-    float WalkSpeed = 500.f;
+
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
     class USpringArmComponent* SpringArm;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera")
     class UCameraComponent* Camera;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")
+    UStaticMeshComponent* LeftHandMesh;
 
-    UPROPERTY(VisibleAnywhere)
-    class UStaticMeshComponent* GloveMesh;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")
+    UStaticMeshComponent* RightHandMesh;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")
+    UStaticMeshComponent* LeftFootMesh;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Combat")
+    UStaticMeshComponent* RightFootMesh;
+
 public:
     AEDCharacter();
 
