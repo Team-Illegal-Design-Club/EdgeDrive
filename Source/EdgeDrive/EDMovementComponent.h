@@ -4,6 +4,7 @@
 #include "GameplayTagContainer.h"
 #include "InputActionValue.h"
 #include "Components/TimelineComponent.h"
+#include "InputBufferTypes.h"
 #include "EDMovementComponent.generated.h"
 
 
@@ -28,8 +29,16 @@ class EDGEDRIVE_API UEDMovementComponent : public UActorComponent
 
     UPROPERTY()
     class UEDAbilityComponent* AbilityComponent;
+ 
 protected:
     virtual void BeginPlay() override;
+    virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+
+    UPROPERTY(EditAnywhere, Category = "Movement|Input Buffer")
+    FInputBufferSettings MovementBufferSettings;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Movement|Input Buffer")
+    TArray<FBaseBufferedInput> MovementInputBuffer;
     UPROPERTY(EditAnywhere, Category = "Movement")
     float WalkSpeed = 500.f;
 
@@ -55,8 +64,11 @@ protected:
 
     UPROPERTY(EditAnywhere, Category = "Dodge")
     UCurveFloat* DodgeCurve;
+
     UFUNCTION()
     void OnDodgeEnd();
+
+    // Motion Matching Animations
     UPROPERTY(EditDefaultsOnly, Category = "Motion Matching")
     UAnimationAsset* DodgeForwardAnim;
 
@@ -72,8 +84,10 @@ protected:
 
     FOnTimelineFloat DodgeTimelineProgress;
     bool bIsWalking = false;
+
     UPROPERTY(BlueprintReadWrite)
     bool bIsSprint = false;
+
     bool bCanDodge = true;
     FTimerHandle DodgeCooldownTimer;
     
@@ -82,7 +96,7 @@ private:
     bool bCanDodgeAfterSprint = true;
     float SprintEndCooldown = 0.02f;
 
-protected:
+    // Motion Matching
     UPROPERTY(EditDefaultsOnly, Category = "Motion Matching")
     UAnimMontage* DodgeMontage;
 
@@ -95,26 +109,37 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Motion Matching")
     float BlendOutTime = 0.15f;
 
-private:
 
     //void UpdateMotionMatching();
 
     UAnimMontage* SelectBestDodgeAnimation();
+
+    void CleanupMovementBuffer();
+    void UpdateInputPenalty(FName InputName);
+    int32 GetInputPriority(FName InputName) const;
+    void ExecuteMovementInput(const FBaseBufferedInput& Input);
+    void ExecuteDodgeLogic();
+    void ExecuteSprintLogic();
 public:
     UEDMovementComponent();
     UFUNCTION(BlueprintCallable, Category = "Movement")
     bool IsDodge() const { return bIsDodge; }
+
     UPROPERTY(BlueprintReadWrite)
     bool b2DModeEnabled = false;
+
     UPROPERTY(BlueprintReadWrite)
     bool bIsDodge = false;
+
     void InitializeMovementComponent();
+
     UFUNCTION()
     void OnDodgeTimelineProgress(float Value);
 
     void SetupInput(class UEnhancedInputComponent* PlayerInputComponent);
     void MoveInput(const FInputActionValue& Value);
     void StartSprint();
+
     UFUNCTION(BlueprintCallable)
     void EndSprint();
     FVector CalculateDodgeDirection(ACharacter* Character);
@@ -129,4 +154,18 @@ public:
 
     UFUNCTION(BlueprintCallable)
     bool IsFalling() const;
+
+	// Input Buffer Public Functions
+	UFUNCTION(Blueprintcallable, Category = "Movement|Input Buffer")
+	void addMovementInputToBuffer(FName InputName, int32 Priority =1 , FVector2D InputData =FVector2D::ZeroVector);
+    UFUNCTION(BlueprintCallable, Category = "Movement|Input Buffer")
+    bool ProcessMovenmentBuffer();
+    UFUNCTION(BlueprintCallable, Category = "Movement|Input Buffer")
+    void ClearMovementBuffer();
+
+    UFUNCTION(BlueprintCallable, Category = "Movement|Input Buffer")
+    bool CanExecuteMovementInput(FName InputName) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Movement|Input Buffer")
+    void SetMovementBufferSettings(const FInputBufferSettings& NewSettings);
 };

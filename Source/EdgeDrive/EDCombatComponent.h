@@ -3,25 +3,8 @@
 #include "EDMovementComponent.h"
 #include "Components/ActorComponent.h"
 #include "Components/TimelineComponent.h"
+#include "InputBufferTypes.h"
 #include "EDCombatComponent.generated.h"
-
-USTRUCT(BlueprintType)
-struct FCommitState
-{
-    GENERATED_BODY()
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    bool bIsCommitted = false;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    FName CommittedAction = NAME_None;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    float CommitEndTime = 0.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    bool bCanBeInterrupted = false;
-};
 
 UENUM(BlueprintType)
 enum class EAttackLimb : uint8
@@ -30,88 +13,6 @@ enum class EAttackLimb : uint8
     RightHand UMETA(DisplayName = "Right Hand"),
     LeftFoot UMETA(DisplayName = "Left Foot"),
     RightFoot UMETA(DisplayName = "Right Foot")
-};
-USTRUCT(BlueprintType)
-struct FAdvancedInputSettings
-{
-    GENERATED_BODY()
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Timing")
-    float BaseBufferDuration = 0.3f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Timing")
-    float MinBufferDuration = 0.067f; // 4 frames at 60fps
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Penalty")
-    float PenaltyDecayTime = 0.5f; // 30 frames at 60fps
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Penalty")
-    int32 MaxPenaltyStacks = 4;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Penalty")
-    float PenaltyMultiplier = 0.5f;
-};
-USTRUCT(BlueprintType)
-struct FInputWithTiming
-{
-    GENERATED_BODY()
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    FName InputName;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    float TimeStamp;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    float Priority = 1.0f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    bool bCanOverrideCommit = false;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    bool bIsConsumed = false;
-};
-
-
-USTRUCT(BlueprintType)
-struct FBufferedInput
-{
-    GENERATED_BODY()
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    FName InputName;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    float TimeStamp;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    bool bIsConsumed = false;
-
-    FBufferedInput()
-        : InputName(NAME_None), TimeStamp(0.0f), bIsConsumed(false) {
-    }
-
-    FBufferedInput(FName InInputName, float InTimeStamp)
-        : InputName(InInputName), TimeStamp(InTimeStamp), bIsConsumed(false) {
-    }
-};
-USTRUCT(BlueprintType)
-struct FInputBufferWindow
-{
-    GENERATED_BODY()
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    bool bIsOpen = false;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    FName BufferTag;
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
-    TArray<FName> AllowedInputs;
-
-    FInputBufferWindow()
-        : bIsOpen(false), BufferTag(NAME_None) {
-    }
 };
 USTRUCT(BlueprintType)
 struct FComboAttackData
