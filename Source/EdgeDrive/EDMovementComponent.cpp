@@ -1,43 +1,9 @@
 ﻿#include "EDMovementComponent.h"
+#include "EDCombatComponent.h"
 #include "EnhancedInputComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "EDAbilityComponent.h"
-//void UEDMovementComponent::UpdateMotionMatching()
-//{
-//    if (!bIsDodge) return;
-//
-//    if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
-//    {
-//        // 현재 입력 방향으로 새로운 방향 계산
-//        const FRotator Rotation = Character->Controller->GetControlRotation();
-//        const FRotator YawRotation(0, Rotation.Yaw, 0);
-//        const FVector ForwardDir = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-//        const FVector RightDir = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
-//
-//        FVector DodgeDirection;
-//
-//        if (CurrentMovementInput.IsZero())
-//        {
-//            DodgeDirection = -Character->GetActorForwardVector();
-//        }
-//        else
-//        {
-//            DodgeDirection = (ForwardDir * CurrentMovementInput.Y +
-//                RightDir * CurrentMovementInput.X).GetSafeNormal();
-//        }
-//
-//        // 부드러운 회전 적용
-//        FRotator TargetRotation = DodgeDirection.Rotation();
-//        FRotator NewRotation = FMath::RInterpTo(
-//            Character->GetActorRotation(),
-//            FRotator(0.0f, TargetRotation.Yaw, 0.0f),
-//            GetWorld()->GetDeltaSeconds(),
-//            10.0f
-//        );
-//        Character->SetActorRotation(NewRotation);
-//    }
-//}
 
 UAnimMontage* UEDMovementComponent::SelectBestDodgeAnimation()
 {
@@ -80,11 +46,16 @@ UAnimMontage* UEDMovementComponent::SelectBestDodgeAnimation()
 UEDMovementComponent::UEDMovementComponent()
 {
     PrimaryComponentTick.bCanEverTick = true;
-
     // Load Assets
     DodgeTimeline = CreateDefaultSubobject<UTimelineComponent>(TEXT("DodgeTimeline"));
     DodgeTimelineProgress.BindUFunction(this, FName("OnDodgeTimelineProgress"));
 
+    MovementBufferSettings.BufferDuration = 0.5f;
+    MovementBufferSettings.MaxBufferedInputs = 3;
+    MovementBufferSettings.bUseSekiroPenalty = true;
+    MovementBufferSettings.PenaltyDecayTime = 0.5;
+    MovementBufferSettings.MaxPenaltyStacks = 4;
+    MovementBufferSettings.bDebugBuffer = false;
 
 }
 void UEDMovementComponent::InitializeMovementComponent()
@@ -130,8 +101,16 @@ void UEDMovementComponent::BeginPlay()
     if (ACharacter* Character = Cast<ACharacter>(GetOwner()))
     {
         AbilityComponent = Character->FindComponentByClass<UEDAbilityComponent>();
+        CombatComponent = Character->FindComponentByClass<UEDCombatComponent>();
     }
 
+}
+void UEDMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+    Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+    // Process Movement Input Buffer every frame
+    ProcessMovementBuffer();
 }
 void UEDMovementComponent::SetDodgeTimelineSpeed(float Speed)
 {
@@ -329,4 +308,152 @@ bool UEDMovementComponent::IsFalling() const
         return Character->GetCharacterMovement()->IsFalling();
     }
     return false;
+}
+
+void UEDMovementComponent::AddMovementInputToBuffer(FName InputName, int32 Priority, FVector2D InputData)
+{
+    float CurrentTime = GetWorld()->GetTimeSeconds();
+    if (MovementBufferSettings.bUseSekiroPenalty)
+    {
+		UpdateInputPenalty(InputName);
+        
+		int32 CurrentPenalty = GetInputPriority(InputName);
+        if (CurrentPenalty >= MovementBufferSettings.MaxPenaltyStacks)
+        {
+            if (MovementBufferSettings.bDebugBuffer)
+            {
+                UE_LOG(LogTemp, Warning, TEXT("Movement input %s ignored due to spam penalty: %d"),
+                    *InputName.ToString(), CurrentPenalty);
+            }
+            return;
+        }
+    }
+    // Check if can execute immediately
+    if (CanExecuteMovementInput(InputName))
+    {
+        FBaseBufferedInput ImmediateInput(InputName, CurrentTime, Priority);
+        ImmediateInput.MovementData = InputData;
+        ExecuteMovementInput(ImmediateInput);
+        return;
+    }
+    // Add to buffer
+    CleanupMovementBuffer();
+
+    if (MovementInputBuffer.Num() >= MovementBufferSettings.MaxBufferedInputs)
+    {
+        // Remove lowest priority input
+        MovementInputBuffer.Sort([](const FBaseBufferedInput& A, const FBaseBufferedInput& B)
+            {
+                return A.Priority > B.Priority;
+            });
+        MovementInputBuffer.RemoveAt(MovementInputBuffer.Num() - 1);
+    }
+
+    FBaseBufferedInput BufferedInput(InputName, CurrentTime, Priority);
+    BufferedInput.MovementData = InputData;
+    MovementInputBuffer.Add(BufferedInput);
+
+    LastInputTimes.Add(InputName, CurrentTime);
+
+    if (MovementBufferSettings.bDebugBuffer)
+    {
+        UE_LOG(LogTemp, Log, TEXT("Added %s to movement buffer (Priority: %d, Buffer Size: %d)"),
+            *InputName.ToString(), Priority, MovementInputBuffer.Num());
+    }
+}
+
+bool UEDMovementComponent::ProcessMovementBuffer()
+{
+    CleanupMovementBuffer();
+
+    if (MovementInputBuffer.Num() == 0) return false;
+    MovementInputBuffer.Sort([](const FBaseBufferedInput& A, const FBaseBufferedInput& B)
+        {
+            if (A.Priority != B.Priority)
+                return A.Priority > B.Priority;
+			return A.TimeStamp < B.TimeStamp;
+        });
+    // Execute highest priority executable input
+    for (FBaseBufferedInput& Input : MovementInputBuffer)
+    {
+        if (!Input.bIsConsumed && CanExecuteMovementInput(Input.InputName))
+        {
+            ExecuteMovementInput(Input);
+            Input.bIsConsumed = true;
+            return true;
+        }
+    }
+    return false;
+}
+bool UEDMovementComponent::CanExecuteMovementInput(FName InputName) const
+{
+    if (InputName == FName("Dodge"))
+    {
+        bool bBasicCondition = bCanDodge && !bIsSprint && bCanDodgeAfterSprint;
+        // Combat Component interaction check (Dodge has Highest Priority)
+        // Combat Component interaction check (Dodge has highest priority)
+        if (CombatComponent && CombatComponent->bIsAttacking)
+        {
+            // Dodge allowed even during attacks (FromSoftware style)
+            return bBasicCondition;
+        }
+
+        return bBasicCondition;
+    }
+    else if (InputName == FName("EndSprint"))
+    {
+        return bIsSprint;
+    }
+    return true;
+}
+
+int32 UEDMovementComponent::GetInputPriority(FName InputName) const
+{
+    // FromSoftware style priorities
+    if (InputName == FName("Dodge")) return 10;      // Highest priority (survival)
+    if (InputName == FName("Sprint")) return 3;      // Low priority
+    if (InputName == FName("EndSprint")) return 2;   // Lowest priority
+
+    return 1; // Default
+}
+
+void UEDMovementComponent::UpdateInputPenalty(FName InputName)
+{
+	float CurrentTime = GetWorld()->GetTimeSeconds();
+    float LastTime = LastInputTimes.FindRef(InputName);
+	//Check penalty decay
+    if (CurrentTime - LastTime > MovementBufferSettings.PenaltyDecayTime)
+    {
+        InputPenalties.Remove(InputName);
+        return;
+    }
+    // Check rapid successive input (Sekiro style)
+    if(CurrentTime - LastTime < 0.1f)//Within 100ms
+    {
+		int32 CurrentPenalty = InputPenalties.FindRef(InputName);  
+        InputPenalties.Add(InputName, FMath::Min(CurrentPenalty + 1, MovementBufferSettings.MaxPenaltyStacks));
+
+        if (MovementBufferSettings.bDebugBuffer)
+        {
+            UE_LOG(LogTemp, Log, TEXT("Input penalty for %s: %d"),
+                *InputName.ToString(), InputPenalties.FindRef(InputName));
+        }
+    }
+}
+
+void UEDMovementComponent::CleanupMovementBuffer()
+{
+    float CurrentTime = GetWorld()->GetTimeSeconds();
+    MovementInputBuffer.RemoveAll([CurrentTime, this](const FBaseBufferedInput& Input) {
+        return (CurrentTime - Input.TimeStamp) > MovementBufferSettings.BufferDuration || Input.bIsConsumed; 
+        });
+}
+void UEDMovementComponent::ClearMovementBuffer()
+{
+}
+
+
+
+void UEDMovementComponent::SetMovementBufferSettings(const FInputBufferSettings& NewSettings)
+{
 }

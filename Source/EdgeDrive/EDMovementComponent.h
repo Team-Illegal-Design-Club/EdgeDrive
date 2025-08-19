@@ -29,16 +29,13 @@ class EDGEDRIVE_API UEDMovementComponent : public UActorComponent
 
     UPROPERTY()
     class UEDAbilityComponent* AbilityComponent;
- 
+
+    UPROPERTY()
+    class UEDCombatComponent* CombatComponent;
 protected:
     virtual void BeginPlay() override;
     virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
-    UPROPERTY(EditAnywhere, Category = "Movement|Input Buffer")
-    FInputBufferSettings MovementBufferSettings;
-
-    UPROPERTY(BlueprintReadOnly, Category = "Movement|Input Buffer")
-    TArray<FBaseBufferedInput> MovementInputBuffer;
     UPROPERTY(EditAnywhere, Category = "Movement")
     float WalkSpeed = 500.f;
 
@@ -51,6 +48,20 @@ protected:
     UPROPERTY(EditAnywhere, Category = "Movement")
     float DodgeCooldown = 0.5f;
 
+    // Input Buffer System
+    UPROPERTY(EditAnywhere, Category = "Movement|Input Buffer")
+    FInputBufferSettings MovementBufferSettings;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Movement|Input Buffer")
+    TArray<FBaseBufferedInput> MovementInputBuffer;
+
+    // Sekiro Style Penalty System
+    UPROPERTY(BlueprintReadOnly, Category = "Movement|Penalty System")
+    TMap<FName, int32> InputPenalties;
+
+    UPROPERTY(BlueprintReadOnly, Category = "Movement|Penalty System")
+    TMap<FName, float> LastInputTimes;
+    // Enhanced Input
     UPROPERTY(EditAnywhere, Category = "EnhancedInput")
     class UInputAction* MoveAction;
 
@@ -59,7 +70,7 @@ protected:
 
     UPROPERTY(EditAnywhere, Category = "EnhancedInput")
     class UInputAction* DodgeAction;
-
+    // Timeline Components
     UTimelineComponent* DodgeTimeline;
 
     UPROPERTY(EditAnywhere, Category = "Dodge")
@@ -151,15 +162,14 @@ public:
     bool IsSprint() const;
     UFUNCTION(BlueprintCallable)
     bool IsWalk() const;
-
     UFUNCTION(BlueprintCallable)
     bool IsFalling() const;
 
 	// Input Buffer Public Functions
 	UFUNCTION(Blueprintcallable, Category = "Movement|Input Buffer")
-	void addMovementInputToBuffer(FName InputName, int32 Priority =1 , FVector2D InputData =FVector2D::ZeroVector);
+    void AddMovementInputToBuffer(FName InputName, int32 Priority = 1, FVector2D InputData = FVector2D::ZeroVector);
     UFUNCTION(BlueprintCallable, Category = "Movement|Input Buffer")
-    bool ProcessMovenmentBuffer();
+    bool ProcessMovementBuffer();
     UFUNCTION(BlueprintCallable, Category = "Movement|Input Buffer")
     void ClearMovementBuffer();
 

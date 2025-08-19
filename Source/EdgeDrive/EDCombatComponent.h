@@ -71,12 +71,6 @@ protected:
     UPROPERTY()
     FTimerHandle ComboResetTimer;
 
-    UPROPERTY(BlueprintReadOnly, Category = "Combat")
-    bool bCanCombo = false;
-
-    UPROPERTY(BlueprintReadWrite)
-    bool bIsAttacking= false;
-
     UPROPERTY(EditAnywhere)
     float Damage;
 
@@ -114,6 +108,13 @@ public:
     
     UFUNCTION(BlueprintCallable, Category = "Combat|Input Buffer")
     void CloseInputBufferWindow();
+
+    UPROPERTY(BlueprintReadOnly, Category = "Combat")
+    bool bCanCombo = false;
+
+    UPROPERTY(BlueprintReadWrite)
+    bool bIsAttacking = false;
+
 protected:
     UFUNCTION(BlueprintCallable, Category = "Combat|Input Buffer")
     void ProcessBufferedInputs();
